@@ -17,7 +17,7 @@ getSENDTestCode <- function(aCol,aTestCD) {
     lastTestCode <<- aTestCD
   }
   # pass back same set code
-  aTestCD
+  as.character(aTestCD)
 }
 getSENDLastTestCodeName <- function(aCol,aDomain) {
   # Retrieve from terminology, the test name matching the last test code
@@ -31,30 +31,63 @@ getSENDLastTestCodeName <- function(aCol,aDomain) {
   }
   aValue
 }
-getOrres <- function(aDomain){   
-  # get from stresc value the codelist to use
-  nameList <- getCodeList(paste(aDomain,"STRESC",sep=""))
-  if (!is.na(nameList) && !is.null(nameList) && nchar(nameList)>0) {
-    # print(paste("Orres randomize from: ",nameList,nchar(nameList)))
-    aValue <- CTRandomName(nameList)
-  } else {
-    # FIXME - need from configuration if no codelist from corresponding stresc
-    aValue <- round(runif(1, 2.0, 100),digits=2)
-  }
-  
-  lastOrres <<- aValue 
-  aValue
-}
 
-getSpec <- function(aDomain){   
-  # get from the codelist to use
-  nameList <- getCodeList(paste(aDomain,"SPEC",sep=""))
-  if (!is.na(nameList) && !is.null(nameList) && nchar(nameList)>0) {
-    aValue <- CTRandomName(nameList)
+getOrres <- function(aDomain,aSex,aTestCD){
+  aDomainConfig <- getConfig(aDomain)
+  ## If Domain is numeric
+  if(aDomain %in% c("BG", "BW", "EG", "FW", "LB", "PC", "PP", "VS")){
+    ## If config found
+    if(exists("aDomainConfig") && !is.null(aDomainConfig)) {
+      testcd_ind <- str_which(names(aDomainConfig), "TESTCD")
+      mean_ind <- str_which(names(aDomainConfig), "STRESM")
+      sd_ind <- str_which(names(aDomainConfig), "STRESSD")
+      aValueMean <- aDomainConfig[aDomainConfig$SEX == aSex &
+                                    aDomainConfig[,testcd_ind] == aTestCD,
+                                  mean_ind]
+      aValueSD <- aDomainConfig[aDomainConfig$SEX == aSex &
+                                    aDomainConfig[,testcd_ind] == aTestCD,
+                                  sd_ind]
+      aValue <- round(rnorm(1, aValueMean, aValueSD), digits=2)
+      # print(paste(" DEBUG Domain: ",aDomain," sex: ",aSex," testcd: ",aTestCD))
+      # print(paste("    DEBUG Test cd: ",testcd_ind," mean index and value: ",mean_ind,aValueMean,aValue))
+      ## If config not found
+    } else {
+      aValue <- round(runif(1, 2.0, 100), digits=2)
+    }
+    ## If domain is catagorical
   } else {
-    aValue <- "Not found"
+    ## If config is found:
+    if(!is.null(aDomainConfig)) {
+      testcd_ind <- str_which(names(aDomainConfig), "TESTCD")
+      fact_ind <- str_which(names(aDomainConfig), "FACT")
+      prop_ind <- str_which(names(aDomainConfig), "PROP")
+      
+      ## Pull proportions for this sex,testcd
+      testConfig <- aDomainConfig[aSex==aDomainConfig$SEX &
+                                    aTestCD==aDomainConfig[,testcd_ind],]
+      
+      totalProportion <- sum(testConfig[,prop_ind])
+      
+      ## If Proportions don't sum to 1 the sample() fucntion will normalize
+      if(totalProportion != 1) {
+        warning(paste0(
+          "Total Proportion for: ",
+          aTestCD,
+          " does not sum to 1: ",
+          totalProportion,
+          ", Normalizing to 1"
+        ))
+      }
+      
+      sample(testConfig[,fact_ind], size = 1, prob = testConfig[,prop_ind])
+      
+      
+      ## If config is not found
+    } else {
+      nameList <- getCodeList(paste(aDomain,"STRESC",sep=""))
+      aValue <- CTRandomName(nameList)
+    }
   }
-  
   lastOrres <<- aValue 
   aValue
 }
@@ -67,7 +100,7 @@ getOrresUnit <- function(aCol){
   if (aCol=="BWORRESU" || aCol == "OMORRESU") {
     aValue <- "g"
   } else if (aCol=="PCORRESU") {
-      aValue <- "ng/mL"
+    aValue <- "ng/mL"
   } else if (!is.null(nameList)) {
     aValue <- CTRandomName(nameList)
   } else {
@@ -109,9 +142,9 @@ getColumnData <- function (aCol,aSex,aTreatment,anAnimal,aRow,aDomain,aStudyID,a
   }
   if (aCol==aTestCDCol) {
     aData <- getSENDTestCode(aCol,aTestCD)
-    }
+  }
   if (aCol==aTestCol)  {aData <- getSENDLastTestCodeName(aCol,aDomain)}
-  if (aCol==aORRESCol) aData <- getOrres(aDomain)
+  if (aCol==aORRESCol) aData <- getOrres(aDomain,aSex,aTestCD)
   if (aCol==aORRESUCol) {aData <- getOrresUnit(aCol)}
   if (aCol==aSTRESCCol) {aData <- getStresc(aCol)}
   if (aCol==aSTRESNCol) {aData <- suppressWarnings(as.numeric(lastOrres))}
@@ -120,5 +153,6 @@ getColumnData <- function (aCol,aSex,aTreatment,anAnimal,aRow,aDomain,aStudyID,a
   if (aCol=="VISITDY") {aData <- iDay}
   if (aCol==aSPECCol) aData <- getSpec(aDomain)
   # return the data
+  # print(paste("               DEBUG aData returned: ",aData))
   aData
 }
